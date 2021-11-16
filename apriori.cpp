@@ -7,6 +7,10 @@
 #include <cmath>
 #include <iomanip>
 #include <algorithm>
+#include <thread>
+#include <omp.h>
+#include "CycleTimer.hpp"
+
 using namespace std;
 
 typedef vector<int> Items;
@@ -31,14 +35,17 @@ long double round(long double value, int pos){
 class Apriori {
 private:
     int nowStep;
+    int kFrequentWorkPtr;
     long double minSupport;
     ItemSets transactions;
     ItemSets kItemSets;
     KFrequentItems kFrequentItems;
     FrequentTable frequentTable;
     vector<tuple<vector<int>, vector<int>, long double, long double>> associationRules;
+    const int thread_num;
+
 public:
-    Apriori (ItemSets _transactions, long double _minSupport) {
+    Apriori (ItemSets _transactions, long double _minSupport, int thread_num = 1) : thread_num(thread_num) {
         nowStep = 0;
         minSupport = _minSupport;
         for(Items &row: _transactions){
@@ -54,16 +61,31 @@ public:
     void process() {
         while(true) {
             nowStep++;
+
             // step 1
             kItemSets = generateNextKItems();
             if (kItemSets.size() == 0) break;
 
             // step 2
-            KFrequentItems frequentItems = generateKFrequentItems();
+            KFrequentItems kfi[thread_num];
+            thread workers[thread_num];
+            kFrequentWorkPtr = 0;
+            for (int i = 1; i < thread_num; i++) {
+                workers[i] = thread(&Apriori::generateKFrequentItems, this, &kfi[i], i);
+            }
+
+            generateKFrequentItems(&kfi[0], 0);
+
+            for (int i = 1; i < thread_num; i++)
+                workers[i].join();
+
+            for (int i = 1; i < thread_num; i++)
+                for (int j = 0; j < kfi[0].size(); j++)
+                    kfi[0][j].support += kfi[i][j].support;
 
             // step 3
             kFrequentItems.clear();
-            for (FrequentItem fi: frequentItems)
+            for (FrequentItem fi: kfi[0])
                 if (round(fi.support, 2) > minSupport)
                     kFrequentItems.push_back(fi);
             frequentTable.push_back(kFrequentItems);
@@ -181,10 +203,11 @@ public:
         return ret;
     }
 
-    long double getSupport (Items item) {
+    inline long double getSupport (Items &item, int start, int size, int id = 0) {
         int ret = 0;
         // TODO: parallize
-        for(auto &row: transactions){
+        for(int index = start; index < start + size; index++){
+            Items &row = transactions[index];
             int i, j;
             if(row.size() < item.size()) continue;
             for(i=0, j=0; i < row.size(); i++) {
@@ -199,13 +222,21 @@ public:
         return (long double)ret / transactions.size() * 100.0;
     }
 
-    KFrequentItems generateKFrequentItems () {
-        KFrequentItems ret;
-        for(auto &row: kItemSets){
-            long double support = getSupport(row);
-            ret.push_back({row, support});
+    void generateKFrequentItems (KFrequentItems *kfi, int id) {
+        for (Items &items: kItemSets)
+            kfi->push_back({items, 0});
+
+        const int size = transactions.size() / thread_num / 4;
+        int index = 0;
+        while (true) {
+            index = __sync_fetch_and_add(&kFrequentWorkPtr, size);
+            if (index >= transactions.size()) break;
+            int s = index + size <= transactions.size() ? size : transactions.size() - index;
+            for (int i = 0; i < kfi->size(); i++){
+                long double support = getSupport(kfi->at(i).items, index, s);
+                kfi->at(i).support = kfi->at(i).support + support;
+            }
         }
-        return ret;
     }
 };
 
@@ -332,32 +363,29 @@ int main (int argc, char ** argv) {
     string inputFileName(argv[2]);
     string outputFileName(argv[3]);
 
-    /*
-       vector<vector<int> > transactions = {
-       {1, 2, 5},
-       {2,4},
-       {2,3},
-       {1, 2, 4},
-       {1, 3},
-       {2, 3},
-       {1, 3},
-       {1, 2, 3, 5},
-       {1, 2, 3}
-       };
-       */
-
     InputReader inputReader(inputFileName);
     ItemSets transactions = inputReader.getTransactions();
-    Apriori apriori(transactions, stold(minSupport));
-    apriori.process();
-    OutputPrinter outputPrinter(outputFileName, apriori.getAssociationRules());
 
-    /*
-       for test
-       Checker checker("output5.txt", "outputRsupport5.txt");
-       checker.compare();
-       */
+    const int max_thread_num = thread::hardware_concurrency();
+    cout << "max number of threads: " << max_thread_num << endl;
+    double start[max_thread_num], end[max_thread_num];
 
+    for (int i = 0; 1 << i <= max_thread_num; i++) {
+        int threads = 1 << i;
+        Apriori apriori(transactions, stold(minSupport), threads);
+        start[i] = CycleTimer::currentSeconds();
+        apriori.process();
+        end[i] = CycleTimer::currentSeconds();
+        OutputPrinter outputPrinter(outputFileName, apriori.getAssociationRules());
+    }
+
+    for (int i = 0; 1 << i <= max_thread_num; i++) {
+        int threads = 1 << i;
+        cout << "threads: " << threads
+             << ", time: " << end[i] - start[i]
+             << ", speedup: " << (end[0] - start[0]) / (end[i] - start[i])
+             << endl;
+    }
 
     return 0;
 }
