@@ -44,6 +44,8 @@ private:
     FrequentTable frequentTable;
     vector<tuple<vector<int>, vector<int>, long double, long double>> associationRules;
     const int thread_num;
+    // FIX: remove purningLSet
+    set<Items> purningLSet[16];
 
 public:
     Apriori (ItemSets _transactions, long double _minSupport, int thread_num = 1) : thread_num(thread_num) {
@@ -70,7 +72,8 @@ public:
             ItemSets kis[thread_num];
             kItemSetsWorkPtr = 0;
             kItemSets.clear();
-            if (nowStep != 1) {
+            // TODO: fine-tune the parameters
+            if (nowStep != 1 && kItemSets.size() > 100) {
                 for (int i = 1; i < thread_num; i++) {
                     workers[i] = thread(&Apriori::generateNextKItems, this, &kis[i], i);
                 }
@@ -180,11 +183,13 @@ public:
                 size = kFrequentItems.size();
             }
             int index = 0;
+            purningLSet[id].clear();
+            for(FrequentItem &row: kFrequentItems) purningLSet[id].insert(row.items);
             while (true) {
                 index = __sync_fetch_and_add(&kItemSetsWorkPtr, size);
                 if (index >= kFrequentItems.size()) break;
                 int s = index + size <= kFrequentItems.size() ? size : kFrequentItems.size() - index;
-                ItemSets tmp = pruning(joining(index, index + s));
+                ItemSets tmp = pruning(joining(index, index + s), id);
                 for (auto t: tmp)
                     set->push_back(t);
             }
@@ -217,18 +222,15 @@ public:
         return ret;
     }
 
-    ItemSets pruning (ItemSets joined) {
+    ItemSets pruning (ItemSets joined, int id) {
         ItemSets ret;
-
-        set<Items> lSet;
-        for(FrequentItem &row: kFrequentItems) lSet.insert(row.items);
 
         for(Items &row: joined){
             int i;
             for(i = 0; i < row.size(); i++) {
                 Items tmp = row;
                 tmp.erase(tmp.begin() + i);
-                if(lSet.find(tmp) == lSet.end()) {
+                if(purningLSet[id].find(tmp) == purningLSet[id].end()) {
                     break;
                 }
             }
