@@ -36,6 +36,7 @@ class Apriori {
 private:
     int nowStep;
     int kFrequentWorkPtr;
+    int kItemSetsWorkPtr;
     long double minSupport;
     ItemSets transactions;
     ItemSets kItemSets;
@@ -61,19 +62,39 @@ public:
     void process() {
         while(true) {
             nowStep++;
+            thread workers[thread_num];
 
+            //=================================================================
             // step 1
-            kItemSets = generateNextKItems();
+            //=================================================================
+            ItemSets kis[thread_num];
+            kItemSetsWorkPtr = 0;
+            kItemSets.clear();
+            if (nowStep != 1) {
+                for (int i = 1; i < thread_num; i++) {
+                    workers[i] = thread(&Apriori::generateNextKItems, this, &kis[i], i);
+                }
+                generateNextKItems(&kis[0], 0);
+
+                for (int i = 1; i < thread_num; i++)
+                    workers[i].join();
+
+                for (int i = 0; i < thread_num; i++)
+                    for (auto t: kis[i])
+                        kItemSets.push_back(t);
+            }
+            else
+                generateNextKItems(&kItemSets, 0);
             if (kItemSets.size() == 0) break;
 
+            //=================================================================
             // step 2
+            //=================================================================
             KFrequentItems kfi[thread_num];
-            thread workers[thread_num];
             kFrequentWorkPtr = 0;
             for (int i = 1; i < thread_num; i++) {
                 workers[i] = thread(&Apriori::generateKFrequentItems, this, &kfi[i], i);
             }
-
             generateKFrequentItems(&kfi[0], 0);
 
             for (int i = 1; i < thread_num; i++)
@@ -83,7 +104,9 @@ public:
                 for (int j = 0; j < kfi[0].size(); j++)
                     kfi[0][j].support += kfi[i][j].support;
 
+            //=================================================================
             // step 3
+            //=================================================================
             kFrequentItems.clear();
             for (FrequentItem fi: kfi[0])
                 if (round(fi.support, 2) > minSupport)
@@ -143,21 +166,34 @@ public:
         return element;
     }
 
-    ItemSets generateNextKItems () {
+    void generateNextKItems (ItemSets *set, int id) {
         if(nowStep == 1) {
-            ItemSets ret;
             Items element = getElement(transactions);
             for(auto &i: element)
-                ret.push_back(vector<int>(1, i));
-            return ret;
-        } else {
-            return pruning(joining());
+                set->push_back(vector<int>(1, i));
+        }
+        else {
+            // TODO: fine-tune workload
+            int size = kFrequentItems.size() / thread_num / 4;
+            if (size == 0) {
+                if (id != 0) return;
+                size = kFrequentItems.size();
+            }
+            int index = 0;
+            while (true) {
+                index = __sync_fetch_and_add(&kItemSetsWorkPtr, size);
+                if (index >= kFrequentItems.size()) break;
+                int s = index + size <= kFrequentItems.size() ? size : kFrequentItems.size() - index;
+                ItemSets tmp = pruning(joining(index, index + s));
+                for (auto t: tmp)
+                    set->push_back(t);
+            }
         }
     }
 
-    ItemSets joining () {
+    ItemSets joining (int start, int end) {
         ItemSets ret;
-        for(int i = 0; i < kFrequentItems.size(); i++){
+        for(int i = start; i < end; i++){
             for(int j = i + 1; j < kFrequentItems.size(); j++) {
                 Items &f1 = kFrequentItems[i].items;
                 Items &f2 = kFrequentItems[j].items;
@@ -205,7 +241,6 @@ public:
 
     inline long double getSupport (Items &item, int start, int size, int id = 0) {
         int ret = 0;
-        // TODO: parallize
         for(int index = start; index < start + size; index++){
             Items &row = transactions[index];
             int i, j;
@@ -226,7 +261,12 @@ public:
         for (Items &items: kItemSets)
             kfi->push_back({items, 0});
 
-        const int size = transactions.size() / thread_num / 4;
+        // TODO: fine-tune workload
+        int size = transactions.size() / thread_num / 4;
+        if (size == 0) {
+            if (id != 0) return;
+            size = transactions.size();
+        }
         int index = 0;
         while (true) {
             index = __sync_fetch_and_add(&kFrequentWorkPtr, size);
