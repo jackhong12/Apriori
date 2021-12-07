@@ -56,11 +56,13 @@ public:
         while(true) {
             nowStep++;
             // step 1
-            kItemSets = generateNextKItems();
+            kItemSets.clear();
+            generateNextKItems(kItemSets);
             if (kItemSets.size() == 0) break;
 
             // step 2
-            KFrequentItems frequentItems = generateKFrequentItems();
+            KFrequentItems frequentItems;
+            generateKFrequentItems(frequentItems);
 
             // step 3
             kFrequentItems.clear();
@@ -122,15 +124,13 @@ public:
         return element;
     }
 
-    ItemSets generateNextKItems () {
+    void generateNextKItems (ItemSets &item) {
         if(nowStep == 1) {
-            ItemSets ret;
             Items element = getElement(transactions);
             for(auto &i: element)
-                ret.push_back(vector<int>(1, i));
-            return ret;
+                item.push_back(vector<int>(1, i));
         } else {
-            return pruning(joining());
+            pruning(joining(), item);
         }
     }
 
@@ -160,9 +160,7 @@ public:
         return ret;
     }
 
-    ItemSets pruning (ItemSets joined) {
-        ItemSets ret;
-
+    void pruning (ItemSets joined, ItemSets &ret) {
         set<Items> lSet;
         for(FrequentItem &row: kFrequentItems) lSet.insert(row.items);
 
@@ -179,7 +177,6 @@ public:
                 ret.push_back(row);
             }
         }
-        return ret;
     }
 
     inline long double getSupport (Items item) {
@@ -200,13 +197,11 @@ public:
         return (long double)ret / transactions.size() * 100.0;
     }
 
-    KFrequentItems generateKFrequentItems () {
-        KFrequentItems ret;
+    void generateKFrequentItems (KFrequentItems &ret) {
         for(auto &row: kItemSets){
             long double support = getSupport(row);
             ret.push_back({row, support});
         }
-        return ret;
     }
 };
 

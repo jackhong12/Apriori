@@ -54,10 +54,10 @@ inline void setBit(Bit *ptr, int item) {
 }
 
 
-void initBitTable (ItemSets trans) {
+void initBitTable (ItemSets &trans) {
     int max_item = -1;
-    for (auto t: trans) {
-        for (auto i: t) {
+    for (auto &t: trans) {
+        for (auto &i: t) {
             if (max_item < i)
                 max_item = i;
         }
@@ -69,7 +69,7 @@ void initBitTable (ItemSets trans) {
         bit_map_table[i] = i;
 }
 
-void initItemsBit (ItemsBit *ptr, ItemSets isets) {
+void initItemsBit (ItemsBit *ptr, ItemSets &isets) {
     ptr->size = isets.size();
     ptr->bit_len = bit_map_table_size;
     ptr->unit_len = (ptr->bit_len + BitMask) >> BitShift;
@@ -123,13 +123,15 @@ public:
         while(true) {
             nowStep++;
             // step 1
-            kItemSets = generateNextKItems();
+            kItemSets.clear();
+            generateNextKItems(kItemSets);
             if (kItemSets.size() == 0) break;
 
             // step 2
             ItemsBit kItemsBit;
             initItemsBit(&kItemsBit, kItemSets);
-            KFrequentItems frequentItems = generateKFrequentItems(&kItemsBit);
+            KFrequentItems frequentItems;
+            generateKFrequentItems(frequentItems, &kItemsBit);
             releaseItemsBit(&kItemsBit);
 
             // step 3
@@ -192,15 +194,13 @@ public:
         return element;
     }
 
-    ItemSets generateNextKItems () {
+    void generateNextKItems (ItemSets &ret) {
         if(nowStep == 1) {
-            ItemSets ret;
             Items element = getElement(transactions);
             for(auto &i: element)
                 ret.push_back(vector<int>(1, i));
-            return ret;
         } else {
-            return pruning(joining());
+            return pruning(joining(), ret);
         }
     }
 
@@ -230,9 +230,7 @@ public:
         return ret;
     }
 
-    ItemSets pruning (ItemSets joined) {
-        ItemSets ret;
-
+    void pruning (ItemSets joined, ItemSets &ret) {
         set<Items> lSet;
         for(FrequentItem &row: kFrequentItems) lSet.insert(row.items);
 
@@ -249,25 +247,6 @@ public:
                 ret.push_back(row);
             }
         }
-        return ret;
-    }
-
-    inline long double getSupport (Items item) {
-        int ret = 0;
-        // TODO: parallize
-        for(auto &row: transactions){
-            int i, j;
-            if(row.size() < item.size()) continue;
-            for(i=0, j=0; i < row.size(); i++) {
-                // throttle
-                if(j == item.size()) break;
-                if(row[i] == item[j]) j++;
-            }
-            if(j == item.size()){
-                ret++;
-            }
-        }
-        return (long double)ret / transactions.size() * 100.0;
     }
 
     inline long double getSupportSIMD (Bit *items) {
@@ -284,23 +263,12 @@ public:
 
     }
 
-    KFrequentItems generateKFrequentItems () {
-        KFrequentItems ret;
-        for(auto &row: kItemSets){
-            long double support = getSupport(row);
-            ret.push_back({row, support});
-        }
-        return ret;
-    }
-
-    KFrequentItems generateKFrequentItems (ItemsBit *ptr) {
-        KFrequentItems ret;
+    void generateKFrequentItems (KFrequentItems &ret, ItemsBit *ptr) {
         for (int i = 0; i < ptr->size; i++) {
             int index = i * ptr->unit_len;
             long double support = getSupportSIMD(&ptr->data[index]);
             ret.push_back({kItemSets[i], support});
         }
-        return ret;
     }
 };
 
