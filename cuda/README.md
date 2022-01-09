@@ -2,7 +2,8 @@
 
 ## Usage
 ```bash
-
+make
+./apriori-cuda 1 ../testcases/transactional_T10I4D100K.csv output.txt
 ```
 
 ## Install Denpendencies
@@ -11,4 +12,3 @@
     ```bash
     sudo apt-get install nvidia-cuda-toolkit -y
     ```
-
