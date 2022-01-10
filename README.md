@@ -19,8 +19,9 @@ The test case we used is a renowned transactional database [T10I4D100K](https://
 - OS: Ubuntu 20.04.3 LTS
 - g++: 9.3.0
 - MPI: 4.0.3
-- CUDA: 11.5
-- Hadoop: 3.3.0
+- CUDA driver: 11.5
+- CUDA: 10.1.243
+- Hadoop: 3.3.1
 
 ## Run Apriori Algorithm
 
@@ -50,7 +51,7 @@ The test case we used is a renowned transactional database [T10I4D100K](https://
 
 ### Example
 
-- For instance, if you want to run the pthread version of the Apriori algorithm, you can use the below commands.
+- For instance, if you want to run the pthread version of the Apriori algorithm, you can use the commands below.
 
   ```bash
   cd pthread
