@@ -29,7 +29,7 @@ int main (int argc, char *argv[]) {
         exit(1);
     }
     string fileName(path);
-    fileName += "/itemset";
+    fileName += "/itemsets";
     fileName += to_string(iteration - 1) + ".txt";
 
     ifstream fin;
